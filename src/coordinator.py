@@ -106,10 +106,11 @@ class Coordinator:
         if not aggregates:
             self.logger.warning("[COORD] No aggregates received before timeout!")
 
-        exclude = {
-            int(f[b"group_id"])
-            for _, f in await self.r.xrange(f"nbft:alerts:{rid}", "-", "+")
-        }
+        exclude = set()
+        for gid in range(len(self.groups)):
+            alerts = await self.r.xrange(f"nbft:alerts:{rid}:{gid}", "-", "+")
+            if alerts:
+                exclude.add(gid)
 
         if exclude:
             self.logger.warning(f"[COORD] Excluding groups with alerts: {exclude}")

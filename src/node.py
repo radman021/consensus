@@ -9,13 +9,6 @@ from logger import Logger
 class Node:
     """
     Represents an NBFT consensus node participating in intra-group consensus.
-
-    Attributes:
-        id: Node identifier.
-        cfg: Global NBFT configuration.
-        group_id: Group to which the node belongs.
-        rep_id: Representative primary node of the group.
-        honest: Whether the node behaves honestly or exhibits Byzantine behavior.
     """
 
     def __init__(self, node_id, cfg, group_id, rep_id, honest=True):
@@ -28,37 +21,32 @@ class Node:
         self.logger = Logger.get_logger(str(node_id))
 
     async def sign(self, payload: dict) -> str:
-        """Simulates message signing by returning a deterministic string signature."""
         sig = f"sig:{self.id}:{payload.get('rid', '?')}"
-        self.logger.info(f"[NODE {self.id}] Signed payload {payload} -> {sig}")
+        self.logger.info(
+            f"[SIGN | node={self.id} | group={self.group_id}] Signed payload {payload} -> {sig}"
+        )
         return sig
 
     async def in_prepare1(self, rid, value):
-        """Sends an InPrepare message with its vote to the group stream."""
+        stage = "IN_PREPARE1"
         sig = await self.sign({"rid": rid, "val": value})
         msg = InPrepare(rid, self.group_id, self.id, value, sig)
         await self.r.xadd(f"nbft:inprep1:{self.group_id}", msg.to_fields())
         self.logger.info(
-            f"[NODE {self.id}] Broadcasted InPrepare (rid={rid}, value={value}) "
-            f"to stream nbft:inprep1:{self.group_id}"
+            f"[{stage} | node={self.id} | group={self.group_id}] "
+            f"Broadcasted InPrepare (rid={rid}, value={value}) to nbft:inprep1:{self.group_id}"
         )
 
     async def in_prepare2_collect(self, rid, deadline_sec):
-        """
-        Executes the in-prepare2 aggregation phase for the group's representative node.
-
-        Implements Algorithm 1 (Node Decision Broadcast Model).
-        If timeout, inconsistency, or insufficient signatures occur,
-        the representative broadcasts alerts to all other groups.
-        """
+        stage = "IN_PREPARE2"
         if self.id != self.rep_id:
             self.logger.debug(
-                f"[NODE {self.id}] Skipping aggregation (not representative for group {self.group_id})"
+                f"[{stage} | node={self.id} | group={self.group_id}] Skipping aggregation (not representative)"
             )
             return None
 
         self.logger.info(
-            f"[REP {self.id}] Starting in_prepare2_collect for round {rid} (group={self.group_id})"
+            f"[{stage} | REP node={self.id} | group={self.group_id}] Starting aggregation for round {rid}"
         )
 
         start = time.time()
@@ -70,21 +58,16 @@ class Node:
             )
             if not resp:
                 continue
-
             for _, msgs in resp:
                 for _, fields in msgs:
                     gid = int(fields[b"group_id"])
                     nid = fields[b"node_id"].decode()
                     val = fields[b"value"].decode()
-
-                    if gid != self.group_id:
+                    if gid != self.group_id or nid in seen:
                         continue
-                    if nid in seen:
-                        continue
-
                     seen[nid] = fields
                     self.logger.info(
-                        f"[REP {self.id}] Received InPrepare from node {nid}: value={val}"
+                        f"[{stage} | REP node={self.id} | group={self.group_id}] Received InPrepare from node={nid}: value={val}"
                     )
 
         values = {fields[b"value"].decode() for fields in seen.values()}
@@ -93,8 +76,8 @@ class Node:
         valid_sigs = len(seen) if consistent else 0
 
         self.logger.info(
-            f"[REP {self.id}] Aggregation complete: {len(seen)} msgs, "
-            f"consistent={consistent}, value={value}, valid_sigs={valid_sigs}"
+            f"[{stage} | REP node={self.id} | group={self.group_id}] "
+            f"Aggregation complete: msgs={len(seen)}, consistent={consistent}, value={value}, valid_sigs={valid_sigs}"
         )
 
         agg = RepAggregate(
@@ -107,7 +90,7 @@ class Node:
         )
         await self.r.xadd(f"nbft:inprep2:{self.group_id}", agg.to_fields())
         self.logger.info(
-            f"[REP {self.id}] Published RepAggregate -> nbft:inprep2:{self.group_id}"
+            f"[{stage} | REP node={self.id} | group={self.group_id}] Published RepAggregate -> nbft:inprep2:{self.group_id}"
         )
 
         reasons = []
@@ -120,19 +103,19 @@ class Node:
 
         if reasons:
             self.logger.warning(
-                f"[REP {self.id}] Detected anomaly -> {reasons}, valid_sigs={valid_sigs}"
+                f"[{stage} | REP node={self.id} | group={self.group_id}] Detected anomaly -> {reasons}, valid_sigs={valid_sigs}"
             )
 
         for reason in reasons:
             alert = Alert(
                 rid, self.group_id, self.id, reason, f"valid_sigs={valid_sigs}"
             )
-            await self.r.xadd(f"nbft:alerts:{rid}", alert.to_fields())
+            await self.r.xadd(f"nbft:alerts:{rid}:{self.group_id}", alert.to_fields())
             self.logger.warning(
-                f"[REP {self.id}] Broadcasted ALERT ({reason}) to nbft:alerts:{rid}"
+                f"[{stage} | REP node={self.id} | group={self.group_id}] Broadcasted ALERT ({reason}) to nbft:alerts:{rid}:{self.group_id}"
             )
 
         self.logger.info(
-            f"[REP {self.id}] Finished in_prepare2_collect (group={self.group_id})"
+            f"[{stage} | REP node={self.id} | group={self.group_id}] Finished aggregation for round {rid}"
         )
         return agg
