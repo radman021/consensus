@@ -1,6 +1,6 @@
 import os
 import logging
-from colorama import Fore, Style, init
+from colorama import Style, init
 
 init(autoreset=True)
 
@@ -8,13 +8,24 @@ init(autoreset=True)
 class Logger:
     _loggers = {}
     _colors = [
-        Fore.BLUE,
-        Fore.GREEN,
-        Fore.CYAN,
-        Fore.MAGENTA,
-        Fore.YELLOW,
-        Fore.RED,
-        Fore.WHITE,
+        "\033[38;5;196m",  # red
+        "\033[38;5;39m",  # blue
+        "\033[38;5;190m",  # lime
+        "\033[38;5;129m",  # purple
+        "\033[38;5;220m",  # yellow
+        "\033[38;5;45m",  # cyan
+        "\033[38;5;202m",  # orange
+        "\033[38;5;27m",  # deep blue
+        "\033[38;5;82m",  # green
+        "\033[38;5;201m",  # magenta
+        "\033[38;5;208m",  # light orange
+        "\033[38;5;99m",  # violet
+        "\033[38;5;244m",  # gray
+        "\033[38;5;220m" + Style.BRIGHT,  # bright yellow
+        "\033[38;5;250m",  # light gray
+        "\033[38;5;37m",  # teal
+        "\033[38;5;207m",  # pink
+        "\033[38;5;231m",  # white
     ]
 
     @staticmethod
@@ -36,7 +47,7 @@ class Logger:
         log_path = os.path.join(log_dir, "log.log")
 
         color = Logger._color_for_name(log_name)
-        file_handler = logging.FileHandler(log_path)
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
         file_formatter = logging.Formatter(
             f"{color}%(asctime)s - %(name)s - %(levelname)s - %(message)s{Style.RESET_ALL}"
         )
