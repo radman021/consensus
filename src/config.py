@@ -29,6 +29,7 @@ class NBFTConfig:
     master_ip: str = "10.0.0.1"
     round_timeout_sec: float = 2.0
     inprep2_deadline_sec: float = 1.0
+    mal_nodes: int = 0
 
     @property
     def E(self) -> int:
