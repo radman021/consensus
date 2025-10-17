@@ -8,8 +8,6 @@ def assign_groups(node_ids, cfg, logger):
     Returns:
         A list of node groups where each group contains m nodes.
     """
-    logger.info(f"[SYSTEM] Starting group generation...")
-
     ring = HashRing(node_ids)
     start_key = f"{cfg.view_number}_{len(node_ids)}"
     walk = ring.clockwise_walk(start_key)
@@ -30,7 +28,6 @@ def assign_groups(node_ids, cfg, logger):
             except StopIteration:
                 break
 
-    logger.info(f"[SYSTEM] Created {len(groups)} groups.")
     return [g for g in groups if g]
 
 

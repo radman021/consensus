@@ -23,8 +23,6 @@ class Coordinator:
         self.logger = logger
 
     async def store_round_config(self, rid, node_ids):
-        self.logger.info(f"[COORD] Storing round config for round {rid}...")
-
         await self._clean_redis(rid)
 
         await self.r.hset(
@@ -45,9 +43,6 @@ class Coordinator:
         )
         await self.r.hset(
             f"nbft:rep:{rid}", mapping={str(gid): nid for gid, nid in self.reps.items()}
-        )
-        self.logger.info(
-            f"[COORD] Round {rid} config stored: groups={len(self.groups)}, reps={self.reps}"
         )
 
     def group_weight(self, valid_sigs, is_rep=True, msg_valid=True):
@@ -76,7 +71,6 @@ class Coordinator:
             return valid_sigs
 
     async def _clean_redis(self, rid):
-        self.logger.info(f"[COORD] Cleaning Redis keys for round {rid}...")
 
         for gid in range(len(self.groups)):
             await self.r.delete(f"nbft:alerts:{rid}:{gid}")
@@ -90,21 +84,15 @@ class Coordinator:
         await self.r.delete("nbft:preprepare1")
         await self.r.delete("nbft:preprepare2")
 
-        self.logger.info(f"[COORD] Redis cleaned for round {rid}")
-
     async def run_round(self, rid: int, value: str):
-        self.logger.info(f"[COORD] Starting consensus round {rid} for value '{value}'")
 
         primary = list(self.reps.values())[0]
         pre = PrePrepare1(rid, primary, value)
         await self.r.xadd("nbft:preprepare1", pre.to_fields())
-        self.logger.info(
-            f"[COORD] Broadcasted PrePrepare1 from primary node '{primary}'"
-        )
 
         deadline = time.time() + self.cfg.inprep2_deadline_sec + 0.7
         aggregates = {}
-        self.logger.info("[COORD] Waiting for group aggregates (RepAggregates)...")
+        self.logger.info("[COORD] Waiting for group aggregates...")
 
         while time.time() < deadline and len(aggregates) < len(self.groups):
             for gid in range(len(self.groups)):
@@ -127,6 +115,8 @@ class Coordinator:
 
         if not aggregates:
             self.logger.warning("[COORD] No aggregates received before timeout!")
+
+        self.logger.info("\n")
 
         exclude = set()
         for gid in range(len(self.groups)):
@@ -159,6 +149,8 @@ class Coordinator:
 
         winner, votes = max(tally.items(), key=lambda kv: kv[1], default=("⊥", 0))
         consensus_reached = total_votes >= threshold
+
+        self.logger.info(f"\n")
 
         self.logger.info(
             f"[COORD] Tally result: {dict(tally)}, valid_votes={total_votes}, "

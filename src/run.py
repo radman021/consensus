@@ -11,10 +11,10 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="repla
 
 async def main():
     logger = Logger.get_logger("simulation")
-    logger.info("[SYSTEM] Starting simulation...")
+    logger.info("[SYSTEM] NBFT consensus simulation started.")
 
     try:
-        # ekstrem koji uspe kad su bar 3 maliciozna u jednoj grupi a svi ostali u razlicitim
+        # ekstrem koji uspe (6 mal) kad su bar 3 maliciozna u jednoj grupi a svi ostali u razlicitim
         # cfg = NBFTConfig(n=16, m=4, mal_nodes=6)
 
         # konsenzus moze da propadne tek kada bude bar 4 maliciozna (po 2 u 2 grupe)
@@ -29,7 +29,6 @@ async def main():
         )
 
         malicious_ids = random.sample(node_ids, cfg.mal_nodes)
-        logger.info(f"[SYSTEM] Malicious nodes assigned: {malicious_ids}")
 
         nodes = []
         for gid, g in enumerate(groups):
@@ -37,7 +36,7 @@ async def main():
             for nid in g:
                 is_mal = nid in malicious_ids
                 if is_mal:
-                    logger.info(f"[SYSTEM] Created MALICIOUS node={nid} in group={gid}")
+                    logger.info(f"[SYSTEM] Created malicious {nid} in group {gid}")
                 nodes.append(Node(nid, cfg, gid, rep, honest=not is_mal))
 
         rid = 1
@@ -45,12 +44,19 @@ async def main():
         await coord.store_round_config(rid, node_ids)
 
         value = "BLOCK_HASH_ABC"
-        logger.info("[SYSTEM] Starting NBFT consensus round...")
+        logger.info("[SYSTEM] Starting NBFT consensus round.\n")
 
         await asyncio.gather(*[n.in_prepare1(rid, value) for n in nodes])
+
+        logger.info(f"\n")
         await asyncio.gather(
             *[n.in_prepare2_collect(rid, cfg.inprep2_deadline_sec) for n in nodes]
         )
+        logger.info(f"\n")
+        await asyncio.gather(
+            *[n.verify_representative(rid) for n in nodes if n.id != n.rep_id]
+        )
+        logger.info(f"\n")
         await coord.run_round(rid, value)
 
         logger.info(" [SYSTEM] Consensus round completed successfully.")

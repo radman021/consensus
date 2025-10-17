@@ -17,14 +17,14 @@ class Node:
     async def sign(self, payload: dict) -> str:
         sig = f"sig:{self.id}:{payload.get('rid', '?')}"
         self.logger.info(
-            f"[SIGN | GROUP {self.group_id}] Signed payload {payload} -> {sig}"
+            f"[SIGN | GROUP {self.group_id}] Signed '{payload.get('val')}'"
         )
         return sig
 
     async def in_prepare1(self, rid, value):
         stage = "IN_PREPARE1"
         if not self.honest:
-            # symulate malicioius attempt
+            # simulate malicious attempt
             value = f"BLOCK_FAKE_{self.id}"
         sig = await self.sign({"rid": rid, "val": value})
         msg = InPrepare(rid, self.group_id, self.id, value, sig)
@@ -38,9 +38,6 @@ class Node:
         if self.id != self.rep_id:
             return None
 
-        self.logger.info(
-            f"[{stage} | GROUP {self.group_id} | REPRESENTATIVE] Aggregating messages..."
-        )
         start = time.time()
         seen = {}
         last_id = "0-0"
@@ -81,8 +78,11 @@ class Node:
         value = majority_value if has_quorum else "⊥"
         valid_sigs = top_count if has_quorum else 0
 
-        if not self.honest and random.random() < 0.0:
-            pass
+        if not self.honest:
+            value = f"BLOCK_FAKE_{self.id}"
+            self.logger.warning(
+                f"[{stage} | MAL REP] Broadcasting malicious value '{value}' instead of group consensus."
+            )
 
         agg = RepAggregate(
             rid,
@@ -94,25 +94,84 @@ class Node:
         )
         await self.r.xadd(f"nbft:inprep2:{self.group_id}", agg.to_fields())
 
-        reasons = []
-        if time.time() - start >= deadline_sec:
-            reasons.append("timeout")
-        if not has_quorum:
-            if len(counts) > 1:
-                reasons.append("mismatch")
-            reasons.append("weak_sig")
+        if self.honest:
+            reasons = []
+            if time.time() - start >= deadline_sec:
+                reasons.append("timeout")
+            if not has_quorum:
+                if len(counts) > 1:
+                    reasons.append("mismatch")
 
-        for reason in reasons:
+            for reason in reasons:
+                alert = Alert(
+                    rid,
+                    self.group_id,
+                    self.id,
+                    reason,
+                    f"valid_sigs={valid_sigs}, rep={self.rep_id}",
+                )
+                await self.r.xadd(
+                    f"nbft:alerts:{rid}:{self.group_id}", alert.to_fields()
+                )
+                self.logger.warning(
+                    f"[{stage} | GROUP {self.group_id}| REPRESENTATIVE] ALERT broadcasted ({reason}) - couldn't reach consensus."
+                )
+
+        return agg
+
+    async def verify_representative(self, rid):
+        """
+        After representative broadcasts aggregate (inprep2),
+        every non-representative node verifies if rep's result
+        matches the majority value from the group's inprep1 votes.
+        """
+        if self.id == self.rep_id or not self.honest:
+            return
+
+        stage = "VERIFY"
+        resp = await self.r.xrevrange(f"nbft:inprep2:{self.group_id}", count=1)
+        if not resp:
+            return
+
+        _, fields = resp[0]
+        rep_val = fields[b"value"].decode()
+        rep_id = fields[b"rep_id"].decode()
+
+        msgs = await self.r.xrange(f"nbft:inprep1:{self.group_id}", min="-", max="+")
+        seen = {}
+        for msg_id, f in msgs:
+            gid = int(f[b"group_id"])
+            nid = f[b"node_id"].decode()
+            val = f[b"value"].decode()
+            if gid != self.group_id or nid in seen:
+                continue
+            seen[nid] = val
+
+        E = self.cfg.E
+        twoEplus1 = 2 * E + 1
+
+        counts = {}
+        for val in seen.values():
+            counts[val] = counts.get(val, 0) + 1
+
+        if counts:
+            majority_value, top_count = max(counts.items(), key=lambda kv: kv[1])
+        else:
+            majority_value, top_count = "⊥", 0
+
+        has_quorum = top_count >= twoEplus1
+        group_majority = majority_value if has_quorum else "⊥"
+
+        if rep_val != group_majority:
             alert = Alert(
                 rid,
                 self.group_id,
                 self.id,
-                reason,
-                f"valid_sigs={valid_sigs}, rep={self.rep_id}",
+                "rep_mismatch",
+                f"rep_id={rep_id}, rep_val={rep_val}, group_majority={group_majority}",
             )
             await self.r.xadd(f"nbft:alerts:{rid}:{self.group_id}", alert.to_fields())
             self.logger.warning(
-                f"[{stage} | GROUP {self.group_id}] ALERT broadcasted ({reason})."
+                f"[{stage} | GROUP {self.group_id}] ALERT broadcasted (rep_mismatch): "
+                f"rep gave '{rep_val}' but group majority was '{group_majority}'."
             )
-
-        return agg
