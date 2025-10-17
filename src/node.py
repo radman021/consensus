@@ -81,7 +81,7 @@ class Node:
         if not self.honest:
             value = f"BLOCK_FAKE_{self.id}"
             self.logger.warning(
-                f"[{stage} | MAL REP] Broadcasting malicious value '{value}' instead of group consensus."
+                f"[{stage} | GROUP {self.group_id} | MAL REP] Broadcasting malicious value '{value}' instead of group consensus."
             )
 
         agg = RepAggregate(
@@ -114,7 +114,7 @@ class Node:
                     f"nbft:alerts:{rid}:{self.group_id}", alert.to_fields()
                 )
                 self.logger.warning(
-                    f"[{stage} | GROUP {self.group_id}| REPRESENTATIVE] ALERT broadcasted ({reason}) - couldn't reach consensus."
+                    f"[{stage} | GROUP {self.group_id}| REPRESENTATIVE] ALERT broadcasted ({reason}) - group didn't reach consensus."
                 )
 
         return agg

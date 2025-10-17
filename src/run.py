@@ -18,8 +18,9 @@ async def main():
         # cfg = NBFTConfig(n=16, m=4, mal_nodes=6)
 
         # konsenzus moze da propadne tek kada bude bar 4 maliciozna (po 2 u 2 grupe)
+        # moze da padne i kad su 3, gde su pritom 2 u jednoj grupi, a treci je represent svoje grupe
 
-        cfg = NBFTConfig(n=16, m=4, mal_nodes=4)
+        cfg = NBFTConfig(n=16, m=4, mal_nodes=5)
         node_ids = [f"node-{i}" for i in range(cfg.n)]
 
         groups = assign_groups(node_ids, cfg, logger)

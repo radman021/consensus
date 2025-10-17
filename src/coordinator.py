@@ -108,8 +108,9 @@ class Coordinator:
                             "valid_sigs": int(fields[b"valid_sigs"]),
                         }
                         self.logger.info(
-                            f"[COORD] Received aggregate from group {gid}: rep={aggregates[gid]['rep']}, "
-                            f"value={aggregates[gid]['value']}, valid_sigs={aggregates[gid]['valid_sigs']}"
+                            f"[COORD] Received aggregate from group {gid}: "
+                            f"rep={aggregates[gid]['rep']}, value={aggregates[gid]['value']}, "
+                            f"valid_sigs={aggregates[gid]['valid_sigs']}"
                         )
             await asyncio.sleep(0.05)
 
@@ -132,38 +133,46 @@ class Coordinator:
                     f"[COORD] Excluding group {gid} due to {len(relevant)} relevant alerts"
                 )
 
-        tally = defaultdict(int)
+        agreed_groups = []
+        group_results = {}
+
         for gid, agg in aggregates.items():
             if gid in exclude:
                 continue
-            w = self.group_weight(agg["valid_sigs"], is_rep=True, msg_valid=True)
-            tally[agg["value"]] += w
-            self.logger.info(
-                f"[COORD] Counting group {gid}: value={agg['value']}, weight={w}, valid_sigs={agg['valid_sigs']}"
-            )
+            group_results[gid] = agg["value"]
+            if agg["valid_sigs"] >= (2 * self.cfg.E + 1):
+                agreed_groups.append(agg["value"])
 
-        threshold = (self.cfg.R - self.cfg.omega) * self.cfg.m
-        total_votes = sum(tally.values())
-        total_possible = self.cfg.n
-        invalid_votes = total_possible - total_votes
+        counts = defaultdict(int)
+        for val in agreed_groups:
+            counts[val] += 1
 
-        winner, votes = max(tally.items(), key=lambda kv: kv[1], default=("⊥", 0))
-        consensus_reached = total_votes >= threshold
+        total_groups = len(self.groups)
+        valid_groups = len(agreed_groups)
+        threshold_groups = total_groups - self.cfg.omega
 
-        self.logger.info(f"\n")
+        winner, group_votes = max(
+            counts.items(), key=lambda kv: kv[1], default=("⊥", 0)
+        )
+        consensus_reached = group_votes >= threshold_groups
 
+        self.logger.info("\n")
+        self.logger.info(f"[COORD] Group results: {group_results}")
         self.logger.info(
-            f"[COORD] Tally result: {dict(tally)}, valid_votes={total_votes}, "
-            f"invalid_votes={invalid_votes}, threshold={threshold}, winner='{winner}', votes={votes}"
+            f"{valid_groups}/{total_groups} groups " f"reached internal consensus."
+        )
+        self.logger.info(
+            f"[COORD] Tally: {dict(counts)}, threshold={threshold_groups}, "
+            f"winner='{winner}', group_votes={group_votes}"
         )
 
         if consensus_reached:
             self.logger.info(
-                f"[COORD] ✅ Consensus reached: value='{winner}' "
-                f"(valid={total_votes}/{total_possible}, invalid={invalid_votes}) committed."
+                f"[COORD] ✅ Global consensus reached: value='{winner}' "
+                f"({group_votes}/{total_groups} groups agreed)."
             )
         else:
             self.logger.warning(
-                f"[COORD] ❌ Consensus not reached (valid={total_votes}/{total_possible}, "
-                f"invalid={invalid_votes}, threshold={threshold})."
+                f"[COORD] ❌ Consensus not reached "
+                f"({group_votes}/{total_groups} groups agreed, threshold={threshold_groups})."
             )
