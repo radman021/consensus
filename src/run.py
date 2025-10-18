@@ -14,12 +14,6 @@ async def main():
     logger.info("[SYSTEM] NBFT consensus simulation started.")
 
     try:
-        # ekstrem koji uspe (6 mal) kad su bar 3 maliciozna u jednoj grupi a svi ostali u razlicitim
-        # cfg = NBFTConfig(n=16, m=4, mal_nodes=6)
-
-        # konsenzus moze da propadne tek kada bude bar 4 maliciozna (po 2 u 2 grupe)
-        # moze da padne i kad su 3, gde su pritom 2 u jednoj grupi, a treci je represent svoje grupe
-
         cfg = NBFTConfig(n=16, m=4, mal_nodes=5)
         node_ids = [f"node-{i}" for i in range(cfg.n)]
 
